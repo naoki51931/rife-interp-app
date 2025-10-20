@@ -1,0 +1,29 @@
+version: "3.9"
+services:
+  backend:
+    build: ./backend
+    container_name: rife-backend
+    environment:
+      - PYTHONUNBUFFERED=1
+      - WORK_DIR=/app
+      - RIFE_REPO=/opt/rife
+      - MODELS_DIR=/opt/rife/models
+      - STORAGE=/data
+      - UVICORN_HOST=0.0.0.0
+      - UVICORN_PORT=8000
+      - CORS_ORIGINS=http://localhost,http://127.0.0.1,http://localhost:5173
+    volumes:
+      - backend_storage:/data
+    expose:
+      - "8000"
+
+  frontend:
+    build: ./frontend
+    container_name: rife-frontend
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+volumes:
+  backend_storage:
