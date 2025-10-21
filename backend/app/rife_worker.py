@@ -29,16 +29,13 @@ class RIFEWorker:
         - scale: internal processing scale (1 or 2) for speed/quality
         """
         cmd = [
-            "python3", str(RIFE_PY),
-            "--exp", str(exp),
-            "--input", str(input_video),
-            "--output", str(out_video),
-            "--scale", str(scale),
+                "python3", str(RIFE_PY), 
+                "--img", str(tmp), 
+                "--output", str(out_dir), 
+                "--exp", str(exp)
         ]
         if fps:
             cmd += ["--fps", str(fps)]
-        if fp16:
-            cmd += ["--fp16"]
         subprocess.run(cmd, check=True)
         return out_video
 
