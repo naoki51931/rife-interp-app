@@ -36,6 +36,7 @@ RUN pip3 install --no-cache-dir -r /app/requirements.txt
 # 5️⃣ モデルフォルダをマウント可能に
 # ============================================================
 # /opt/rife/models はホスト側 ./models をバインドマウント
+COPY ./models /opt/rife/models
 VOLUME ["/opt/rife/models"]
 
 # ============================================================
