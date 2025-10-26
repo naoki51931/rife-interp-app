@@ -112,3 +112,12 @@ async def download(job_id: str):
     if not out.exists():
         return JSONResponse(status_code=404, content={"detail": "file not found"})
     return FileResponse(str(out), media_type="video/mp4", filename=out.name)
+
+
+@app.get("/api/download_frames/{job_id}")
+def download_frames(job_id: str):
+    folder = Path(f"/data/{job_id}_seq_frames/output")
+    zip_path = folder.parent / f"{job_id}_frames.zip"
+    shutil.make_archive(zip_path.with_suffix(""), 'zip', folder)
+    return FileResponse(zip_path, filename=f"{job_id}_frames.zip")
+

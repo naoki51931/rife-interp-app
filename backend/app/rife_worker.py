@@ -5,80 +5,105 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from settings import settings
-from utils.video import extract_frames, encode_video_from_frames, ensure_dir
+from utils.video import (
+    extract_frames,
+    ensure_dir,
+    auto_encode_video,   # 🔥 自動判定付きglob対応
+)
 
 RIFE_PY = Path(settings.rife_repo) / "inference_video.py"
 
 
 class RIFEWorker:
+    """
+    RIFE フレーム補間処理を担当するバックエンドワーカー
+    """
+
     def __init__(self, storage: str = settings.storage):
         self.storage = Path(storage)
         ensure_dir(self.storage)
 
+    # ============================================================
+    # 🎞️ 動画全体の補間
+    # ============================================================
     def interpolate_video(self,
                           input_video: Path,
                           out_video: Path,
                           exp: int = 2,
                           fps: Optional[int] = None,
-                          scale: Literal[1,2,4] = 1,
-                          fp16: bool = True) -> Path:
+                          scale: Literal[1, 2, 4] = 1):
         """
-        Use Practical-RIFE's inference_video.py for video interpolation.
-        - exp: 2 => 2x frames; 3 => 4x; 4 => 8x, etc. (2^exp)
-        - fps: if set, target fps; otherwise inherits input
-        - scale: internal processing scale (1 or 2) for speed/quality
+        Practical-RIFE の inference_video.py を使って動画全体を補間
+        - exp: 2 → 2x中間, 3 → 4x, 4 → 8x
+        - fps: 出力FPSを指定。Noneなら元動画のFPSを維持
+        - scale: 内部処理のスケール（高速化用）
         """
+        work_dir = self.storage / "tmp_frames"
+        ensure_dir(work_dir)
+
+        # 元動画 → フレーム抽出
+        extract_frames(input_video, work_dir, fps or 30)
+
+        # RIFE による補間実行
         cmd = [
-                "python3", str(RIFE_PY), 
-                "--img", str(tmp), 
-                "--output", str(out_dir), 
-                "--exp", str(exp)
+            "python3", str(RIFE_PY),
+            "--img", str(work_dir),
+            "--output", str(work_dir / "output"),
+            "--exp", str(exp),
         ]
-        if fps:
-            cmd += ["--fps", str(fps)]
+        print("🚀 Running RIFE:", " ".join(cmd))
         subprocess.run(cmd, check=True)
+
+        # 出力されたフレーム群を動画に変換（glob対応）
+        auto_encode_video(work_dir / "output", out_video, fps=fps or 30)
+
+        print(f"✅ RIFE interpolation complete → {out_video}")
         return out_video
 
+    # ============================================================
+    # 🖼️ 2枚の画像から動画を生成
+    # ============================================================
     def interpolate_two_frames(self,
                                frame_a: Path,
                                frame_b: Path,
                                out_video: Path,
                                num_mid: int = 6,
-                               fps: int = 30) -> Path:
-        """Interpolate N middle frames between two images and encode as video."""
-        work = Path(out_video).with_suffix("").parent / (out_video.stem + "_frames")
-        if work.exists():
-            shutil.rmtree(work)
-        ensure_dir(work)
+                               fps: int = 30):
+        """
+        2枚の画像の間に中間フレームを生成し、動画化
+        """
+        work_dir = Path(out_video).with_suffix("").parent / (out_video.stem + "_frames")
+        if work_dir.exists():
+            shutil.rmtree(work_dir)
+        ensure_dir(work_dir)
 
-        # prepare sequence: 000000.png (A), middle(s), 00000N.png (B)
-        shutil.copy(frame_a, work / "000000.png")
-        prev = work / "000000.png"
+        # 入力画像を一時ディレクトリにコピー
+        tmp_pair = work_dir / "pair"
+        ensure_dir(tmp_pair)
+        shutil.copy(frame_a, tmp_pair / "000000.png")
+        shutil.copy(frame_b, tmp_pair / "000001.png")
 
-        # RIFE has a script for image pairs; invoke it in a loop creating midpoints
-        # We'll use video script by composing a mini-set per pair; simplest approach:
-        def rife_pair(p0: Path, p1: Path, out_dir: Path, exp: int):
-            # Put two frames into a temp dir and run inference_video.py on it.
-            tmp = out_dir / "pair"
-            ensure_dir(tmp)
-            shutil.copy(p0, tmp / "000000.png")
-            shutil.copy(p1, tmp / "000001.png")
-            cmd = ["python3", str(RIFE_PY), "--input", str(tmp), "--output", str(out_dir), "--exp", str(exp), "--fp16"]
-            subprocess.run(cmd, check=True)
-            shutil.rmtree(tmp)
-
-        # Choose exp so that 2^exp - 1 ~= num_mid
+        # expを計算（num_midに応じて動的に決定）
         exp = 1
         while (2 ** exp) - 1 < num_mid:
             exp += 1
 
-        # Run once to create dense in-betweens between A and B
-        rife_pair(frame_a, frame_b, work, exp)
+        # RIFE実行
+        cmd = [
+            "python3", str(RIFE_PY),
+            "--img", str(tmp_pair),
+            "--output", str(work_dir / "output"),
+            "--exp", str(exp),
+        ]
+        print("🚀 Running RIFE (pair):", " ".join(cmd))
+        subprocess.run(cmd, check=True)
 
-        # The result dir now holds 2^exp frames inclusive; rename sequentially
-        frames = sorted(work.glob("*.png"))
-        for idx, f in enumerate(frames):
-            f.rename(work / f"{idx:06d}.png")
+        # 出力画像群を動画化（glob対応）
+        auto_encode_video(work_dir / "output", out_video, fps=fps)
 
-        encode_video_from_frames(work, out_video, fps=fps)
+        print(f"🎬 Video created → {out_video}")
+
+        job.output_url = f"/data/{job.id}_seq_frames/output/"  # ← ここ！！
+        print(f"✅ 中間フレーム出力URL: {job.output_url}")
         return out_video
+
