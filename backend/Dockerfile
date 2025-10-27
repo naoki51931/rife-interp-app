@@ -56,6 +56,11 @@ ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
 # ============================================================
+# nano install
+# ============================================================
+RUN apt-get update && apt-get install -y nano vim less && apt-get clean
+
+# ============================================================
 # 8️⃣ 実行コマンド
 # ============================================================
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -26,11 +26,13 @@ JOBS = {}
 STORAGE = Path(settings.storage)
 STORAGE.mkdir(parents=True, exist_ok=True)
 
+
 class JobStatus(BaseModel):
     id: str
     status: str
     kind: str
     output_url: Optional[str] = None
+    frames_url: Optional[str] = None   # 🆕 中間フレーム用URL
     error: Optional[str] = None
 
 
@@ -62,7 +64,6 @@ async def interpolate_video(
         JOBS[job_id].status = "error"
         JOBS[job_id].error = str(e)
     finally:
-        # keep input for debugging; optionally delete
         pass
 
     return JOBS[job_id]
@@ -87,8 +88,19 @@ async def interpolate_frames(
 
     try:
         worker.interpolate_two_frames(a_path, b_path, out_path, num_mid=num_mid, fps=fps)
+
         JOBS[job_id].status = "done"
+
+        # 🎬 MP4ダウンロード用
         JOBS[job_id].output_url = f"/api/download/{job_id}"
+
+        # 🖼️ PNG中間フレーム用
+        frames_folder = Path(f"/data/{job_id}_seq_frames/output")
+        if frames_folder.exists():
+            JOBS[job_id].frames_url = f"/data/{job_id}_seq_frames/output/"
+        else:
+            JOBS[job_id].frames_url = None
+
     except Exception as e:
         JOBS[job_id].status = "error"
         JOBS[job_id].error = str(e)
